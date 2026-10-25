@@ -7,6 +7,12 @@ import shlex
 import sys
 from collections.abc import Sequence
 
+from valutatrade_hub.core.currencies import get_supported_codes
+from valutatrade_hub.core.exceptions import (
+    ApiRequestError,
+    CurrencyNotFoundError,
+    InsufficientFundsError,
+)
 from valutatrade_hub.core.usecases import TradingUseCases
 
 
@@ -28,11 +34,9 @@ def build_parser() -> CliArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     # 1. register
-    reg_parser = subparsers.add_parser("register",
-                                       help="Зарегистрировать нового пользователя")
+    reg_parser = subparsers.add_parser("register", help="Зарегистрировать нового пользователя")
     reg_parser.add_argument("--username", required=True, type=str, help="Имя пользователя")
-    reg_parser.add_argument("--password", required=True, type=str,
-                            help="Пароль (минимум 4 символа)")
+    reg_parser.add_argument("--password", required=True, type=str, help="Пароль (минимум 4 символа)")
 
     # 2. login
     login_parser = subparsers.add_parser("login", help="Войти в систему")
@@ -40,31 +44,27 @@ def build_parser() -> CliArgumentParser:
     login_parser.add_argument("--password", required=True, type=str, help="Пароль")
 
     # 3. show-portfolio
-    port_parser = subparsers.add_parser("show-portfolio",
-                                        help="Показать портфель и балансы")
-    port_parser.add_argument("--base", default="USD", type=str,
-                             help="Базовая валюта (по умолчанию USD)")
+    port_parser = subparsers.add_parser("show-portfolio", help="Показать портфель и балансы")
+    port_parser.add_argument("--base", default="USD", type=str, help="Базовая валюта (по умолчанию USD)")
 
     # 4. buy
     buy_parser = subparsers.add_parser("buy", help="Купить валюту")
-    buy_parser.add_argument("--currency", required=True, type=str,
-                            help="Код покупаемой валюты")
-    buy_parser.add_argument("--amount", required=True, type=str,
-                            help="Количество покупаемой валюты")
+    buy_parser.add_argument("--currency", required=True, type=str, help="Код покупаемой валюты")
+    buy_parser.add_argument("--amount", required=True, type=str, help="Количество покупаемой валюты")
 
     # 5. sell
     sell_parser = subparsers.add_parser("sell", help="Продать валюту")
-    sell_parser.add_argument("--currency", required=True, type=str,
-                             help="Код продаваемой валюты")
-    sell_parser.add_argument("--amount", required=True, type=str,
-                             help="Количество продаваемой валюты")
+    sell_parser.add_argument("--currency", required=True, type=str, help="Код продаваемой валюты")
+    sell_parser.add_argument("--amount", required=True, type=str, help="Количество продаваемой валюты")
 
     # 6. get-rate
     rate_parser = subparsers.add_parser("get-rate", help="Получить курс валюты")
-    rate_parser.add_argument("--from", dest="from_currency", required=True,
-                             type=str, help="Исходная валюта")
-    rate_parser.add_argument("--to", dest="to_currency", required=True,
-                             type=str, help="Целевая валюта")
+    rate_parser.add_argument(
+        "--from", dest="from_currency", required=True, type=str, help="Исходная валюта"
+    )
+    rate_parser.add_argument(
+        "--to", dest="to_currency", required=True, type=str, help="Целевая валюта"
+    )
 
     # Вспомогательные команды интерактивного режима
     subparsers.add_parser("help", help="Показать список команд")
@@ -113,6 +113,16 @@ def execute_command(
             print(usecases.sell(currency_code=args.currency, amount=args.amount))
         elif cmd == "get-rate":
             print(usecases.get_rate(from_currency=args.from_currency, to_currency=args.to_currency))
+    except InsufficientFundsError as exc:
+        print(exc)
+    except CurrencyNotFoundError as exc:
+        supported = ", ".join(get_supported_codes())
+        print(
+            f"{exc}. Поддерживаемые коды валют: {supported}. "
+            "Используйте 'get-rate --help' для справки."
+        )
+    except ApiRequestError as exc:
+        print(f"{exc}. Пожалуйста, повторите попытку позже или проверьте подключение к сети.")
     except (ValueError, PermissionError, TypeError) as exc:
         print(exc)
 
@@ -129,8 +139,7 @@ def run_cli(argv: Sequence[str] | None = None) -> None:
         execute_command(args_list, usecases, parser)
         return
 
-    print("Добро пожаловать в ValutaTrade Hub CLI! " \
-    "Введите 'help' для списка команд или 'exit' для выхода.")
+    print("Добро пожаловать в ValutaTrade Hub CLI! Введите 'help' для списка команд или 'exit' для выхода.")
     while True:
         try:
             raw_line = input("> ").strip()
