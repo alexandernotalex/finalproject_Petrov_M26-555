@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from valutatrade_hub.core.currencies import Currency, get_currency
@@ -10,7 +10,6 @@ from valutatrade_hub.core.exceptions import ApiRequestError
 from valutatrade_hub.infra.database import DatabaseManager
 from valutatrade_hub.infra.settings import SettingsLoader
 
-# Заглушка курсов на случай инициализации пустого кеша
 DEFAULT_RATES_TO_USD: dict[str, float] = {
     "USD": 1.0,
     "EUR": 1.0786,
@@ -18,7 +17,7 @@ DEFAULT_RATES_TO_USD: dict[str, float] = {
     "BTC": 59337.21,
     "RUB": 0.01016,
     "ETH": 3720.00,
-    "SOL": 175.50,
+    "SOL": 145.12,
 }
 
 
@@ -44,26 +43,44 @@ def is_rate_fresh(updated_at_str: str, ttl_seconds: int | None = None) -> bool:
     settings = SettingsLoader()
     ttl = ttl_seconds if ttl_seconds is not None else int(settings.get("RATES_TTL_SECONDS", 300))
     try:
-        updated_at = datetime.fromisoformat(updated_at_str)
-        now = datetime.now(updated_at.tzinfo)
+        normalized = updated_at_str.replace("Z", "+00:00")
+        updated_at = datetime.fromisoformat(normalized)
+        now = datetime.now(updated_at.tzinfo) if updated_at.tzinfo else datetime.now()
         return (now - updated_at) <= timedelta(seconds=ttl)
     except ValueError:
         return False
 
 
+def get_pairs_dict(rates_data: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Извлекает словарь валютных пар как из формата {'pairs': {...}}, так и из плоского."""
+    if "pairs" in rates_data and isinstance(rates_data["pairs"], dict):
+        return rates_data["pairs"]
+    return {
+        k: v
+        for k, v in rates_data.items()
+        if isinstance(v, dict) and "rate" in v
+    }
+
+
 def get_or_refresh_rates() -> dict[str, Any]:
-    """Читает кеш курсов через DatabaseManager; при отсутствии создаёт из заглушки."""
+    """Читает кеш курсов через DatabaseManager; при отсутствии создаёт начальный снимок."""
     db = DatabaseManager()
     rates_data = db.load_rates_data()
     if not rates_data:
-        now_iso = datetime.now().replace(microsecond=0).isoformat()
-        rates_data = {
-            f"{code}_USD": {"rate": rate, "updated_at": now_iso}
+        now_iso = datetime.now(UTC).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+        pairs = {
+            f"{code}_USD": {
+                "rate": rate,
+                "updated_at": now_iso,
+                "source": "StubService",
+            }
             for code, rate in DEFAULT_RATES_TO_USD.items()
             if code != "USD"
         }
-        rates_data["source"] = "StubService"
-        rates_data["last_refresh"] = now_iso
+        rates_data = {
+            "pairs": pairs,
+            "last_refresh": now_iso,
+        }
         db.save_rates_data(rates_data)
     return rates_data
 
@@ -71,7 +88,8 @@ def get_or_refresh_rates() -> dict[str, Any]:
 def extract_flat_rates(rates_data: dict[str, Any]) -> dict[str, float]:
     """Извлекает плоский словарь курсов {'BTC_USD': 59337.21} из структуры rates.json."""
     flat_rates: dict[str, float] = {"USD_USD": 1.0}
-    for key, val in rates_data.items():
+    pairs = get_pairs_dict(rates_data)
+    for key, val in pairs.items():
         if isinstance(val, dict) and "rate" in val:
             flat_rates[key.upper()] = float(val["rate"])
     return flat_rates
@@ -85,7 +103,8 @@ def resolve_pair_rate(
     """Вычисляет курс from_code -> to_code, время обновления и флаг свежести TTL."""
     src = validate_currency_code(from_code)
     dst = validate_currency_code(to_code)
-    now_iso = datetime.now().replace(microsecond=0).isoformat()
+    now_iso = datetime.now(UTC).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+    pairs = get_pairs_dict(rates_data)
 
     if src == dst:
         return 1.0, now_iso, True
@@ -93,37 +112,35 @@ def resolve_pair_rate(
     direct_key = f"{src}_{dst}"
     reverse_key = f"{dst}_{src}"
 
-    if direct_key in rates_data and isinstance(rates_data[direct_key], dict):
-        entry = rates_data[direct_key]
+    if direct_key in pairs and isinstance(pairs[direct_key], dict):
+        entry = pairs[direct_key]
         rate = float(entry["rate"])
         updated_at = str(entry.get("updated_at", now_iso))
         return rate, updated_at, is_rate_fresh(updated_at)
 
-    if reverse_key in rates_data and isinstance(rates_data[reverse_key], dict):
-        entry = rates_data[reverse_key]
+    if reverse_key in pairs and isinstance(pairs[reverse_key], dict):
+        entry = pairs[reverse_key]
         rev_rate = float(entry["rate"])
         if rev_rate > 0:
             rate = 1.0 / rev_rate
             updated_at = str(entry.get("updated_at", now_iso))
             return rate, updated_at, is_rate_fresh(updated_at)
 
-    # Кросс-курс через USD
     src_usd_key = f"{src}_USD"
     dst_usd_key = f"{dst}_USD"
     if (
-        src_usd_key in rates_data
-        and dst_usd_key in rates_data
-        and isinstance(rates_data[src_usd_key], dict)
-        and isinstance(rates_data[dst_usd_key], dict)
+        src_usd_key in pairs
+        and dst_usd_key in pairs
+        and isinstance(pairs[src_usd_key], dict)
+        and isinstance(pairs[dst_usd_key], dict)
     ):
-        src_rate = float(rates_data[src_usd_key]["rate"])
-        dst_rate = float(rates_data[dst_usd_key]["rate"])
+        src_rate = float(pairs[src_usd_key]["rate"])
+        dst_rate = float(pairs[dst_usd_key]["rate"])
         if dst_rate > 0:
             rate = src_rate / dst_rate
-            updated_at = str(rates_data[src_usd_key].get("updated_at", now_iso))
+            updated_at = str(pairs[src_usd_key].get("updated_at", now_iso))
             return rate, updated_at, is_rate_fresh(updated_at)
 
-    # Резервное получение из DEFAULT_RATES_TO_USD
     if src in DEFAULT_RATES_TO_USD and dst in DEFAULT_RATES_TO_USD:
         rate = DEFAULT_RATES_TO_USD[src] / DEFAULT_RATES_TO_USD[dst]
         return rate, now_iso, False
