@@ -136,7 +136,8 @@ class TradingUseCases:
             rate, _, _ = resolve_pair_rate(code, base, rates_data)
             converted = wallet.balance * rate
             amount_fmt = (
-                f"{wallet.balance:.2f}" if code in {"USD", "EUR", "RUB", "GBP"} else f"{wallet.balance:.4f}"
+                f"{wallet.balance:.2f}" if code in {"USD", "EUR", "RUB", "GBP"}
+                else f"{wallet.balance:.4f}"
             )
             lines.append(f"- {code}: {amount_fmt}  → {converted:.2f} {base}")
 
@@ -227,7 +228,8 @@ class TradingUseCases:
         )
 
     def get_rate(self, from_currency: str, to_currency: str) -> str:
-        """Возвращает текущий и обратный курс между двумя валютами с проверкой TTL из SettingsLoader."""
+        """Возвращает текущий и обратный курс между двумя валютами
+        с проверкой TTL из SettingsLoader."""
         src_curr = get_currency(from_currency)
         dst_curr = get_currency(to_currency)
         src, dst = src_curr.code, dst_curr.code
@@ -251,7 +253,8 @@ class TradingUseCases:
         reverse_rate = 1.0 / rate if rate > 0 else 0.0
 
         rate_str = f"{rate:.8f}".rstrip("0").rstrip(".") if rate < 0.01 else f"{rate:.4f}"
-        rev_str = f"{reverse_rate:.2f}" if reverse_rate >= 1 else f"{reverse_rate:.8f}".rstrip("0").rstrip(".")
+        rev_str = f"{reverse_rate:.2f}" if reverse_rate >= 1 else \
+        f"{reverse_rate:.8f}".rstrip("0").rstrip(".")
 
         return (
             f"Курс {src}→{dst}: {rate_str} (обновлено: {formatted_time})\n"
