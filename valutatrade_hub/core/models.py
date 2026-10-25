@@ -7,6 +7,8 @@ import secrets
 from datetime import datetime
 from typing import Any
 
+from valutatrade_hub.core.exceptions import CurrencyNotFoundError, InsufficientFundsError
+
 MIN_PASSWORD_LENGTH = 4
 
 
@@ -166,13 +168,14 @@ class Wallet:
         self.balance += float(amount)
 
     def withdraw(self, amount: float) -> None:
-        """Снимает средства с кошелька при наличии достаточного баланса."""
+        """Снимает средства с кошелька или выбрасывает InsufficientFundsError."""
         self._validate_amount(amount)
         amount_float = float(amount)
         if amount_float > self._balance:
-            raise ValueError(
-                f"Недостаточно средств: доступно {self._balance:.4f} {self.currency_code}, "
-                f"требуется {amount_float:.4f} {self.currency_code}"
+            raise InsufficientFundsError(
+                available=self._balance,
+                required=amount_float,
+                code=self.currency_code,
             )
         self.balance -= amount_float
 
@@ -259,9 +262,11 @@ class Portfolio:
         rates = exchange_rates or {
             "USD_USD": 1.0,
             "EUR_USD": 1.0786,
+            "GBP_USD": 1.2950,
             "BTC_USD": 59337.21,
             "RUB_USD": 0.01016,
             "ETH_USD": 3720.00,
+            "SOL_USD": 175.50,
         }
 
         total_value = 0.0
@@ -280,7 +285,7 @@ class Portfolio:
             elif f"{code}_USD" in rates and f"{base}_USD" in rates and rates[f"{base}_USD"] > 0:
                 rate = rates[f"{code}_USD"] / rates[f"{base}_USD"]
             else:
-                raise ValueError(f"Неизвестная базовая валюта '{base}'")
+                raise CurrencyNotFoundError(base)
 
             total_value += wallet.balance * rate
 
