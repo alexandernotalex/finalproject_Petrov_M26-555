@@ -2,24 +2,25 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from prettytable import PrettyTable
 
-from valutatrade_hub.core.currencies import get_currency
+from valutatrade_hub.core.currencies import CryptoCurrency, get_currency
 from valutatrade_hub.core.exceptions import (
-    ApiRequestError,
+    CurrencyNotFoundError,
     InsufficientFundsError,
 )
 from valutatrade_hub.core.models import Portfolio, User
 from valutatrade_hub.core.utils import (
-    DEFAULT_RATES_TO_USD,
     extract_flat_rates,
     get_or_refresh_rates,
+    get_pairs_dict,
     resolve_pair_rate,
     validate_amount,
 )
 from valutatrade_hub.decorators import log_action
 from valutatrade_hub.infra.database import DatabaseManager
 from valutatrade_hub.infra.settings import SettingsLoader
+from valutatrade_hub.parser_service.updater import RatesUpdater
 
 
 class TradingUseCases:
@@ -116,7 +117,7 @@ class TradingUseCases:
         return f"Вы вошли как '{user.username}'"
 
     def show_portfolio(self, base_currency: str | None = None) -> str:
-        """Возвращает отформатированное состояние портфеля и общую стоимость в базовой валюте."""
+        """Возвращает состояние портфеля и общую стоимость в базовой валюте."""
         user = self._require_auth()
         default_base = str(self._settings.get("DEFAULT_BASE_CURRENCY", "USD"))
         base_curr_obj = get_currency(base_currency or default_base)
@@ -136,7 +137,8 @@ class TradingUseCases:
             rate, _, _ = resolve_pair_rate(code, base, rates_data)
             converted = wallet.balance * rate
             amount_fmt = (
-                f"{wallet.balance:.2f}" if code in {"USD", "EUR", "RUB", "GBP"}
+                f"{wallet.balance:.2f}"
+                if code in {"USD", "EUR", "RUB", "GBP"}
                 else f"{wallet.balance:.4f}"
             )
             lines.append(f"- {code}: {amount_fmt}  → {converted:.2f} {base}")
@@ -228,8 +230,7 @@ class TradingUseCases:
         )
 
     def get_rate(self, from_currency: str, to_currency: str) -> str:
-        """Возвращает текущий и обратный курс между двумя валютами
-        с проверкой TTL из SettingsLoader."""
+        """Возвращает текущий и обратный курс между двумя валютами с проверкой TTL."""
         src_curr = get_currency(from_currency)
         dst_curr = get_currency(to_currency)
         src, dst = src_curr.code, dst_curr.code
@@ -237,26 +238,109 @@ class TradingUseCases:
         rates_data = get_or_refresh_rates()
         rate, updated_at_iso, is_fresh = resolve_pair_rate(src, dst, rates_data)
 
-        if not is_fresh:
-            if src in DEFAULT_RATES_TO_USD and dst in DEFAULT_RATES_TO_USD:
-                now_iso = datetime.now().replace(microsecond=0).isoformat()
-                pair_key = f"{src}_{dst}"
-                if pair_key in rates_data and isinstance(rates_data[pair_key], dict):
-                    rates_data[pair_key]["updated_at"] = now_iso
-                rates_data["last_refresh"] = now_iso
-                self._db.save_rates_data(rates_data)
-                updated_at_iso = now_iso
-            else:
-                raise ApiRequestError(f"Курс {src}→{dst} устарел, а сервис обновления недоступен")
-
-        formatted_time = updated_at_iso.replace("T", " ")
+        formatted_time = updated_at_iso.replace("T", " ").replace("Z", "")
         reverse_rate = 1.0 / rate if rate > 0 else 0.0
 
         rate_str = f"{rate:.8f}".rstrip("0").rstrip(".") if rate < 0.01 else f"{rate:.4f}"
-        rev_str = f"{reverse_rate:.2f}" if reverse_rate >= 1 else \
-        f"{reverse_rate:.8f}".rstrip("0").rstrip(".")
-
-        return (
-            f"Курс {src}→{dst}: {rate_str} (обновлено: {formatted_time})\n"
-            f"Обратный курс {dst}→{src}: {rev_str}"
+        rev_str = (
+            f"{reverse_rate:.2f}"
+            if reverse_rate >= 1
+            else f"{reverse_rate:.8f}".rstrip("0").rstrip(".")
         )
+
+        lines = [
+            f"Курс {src}→{dst}: {rate_str} (обновлено: {formatted_time})",
+            f"Обратный курс {dst}→{src}: {rev_str}",
+        ]
+        if not is_fresh:
+            lines.append(
+                "Внимание: данные в локальном кэше устарели (превышен TTL). "
+                "Выполните 'update-rates' для получения свежих котировок."
+            )
+        return "\n".join(lines)
+
+    def update_rates(self, source: str | None = None) -> str:
+        """Запускает немедленное обновление курсов через Parser Service."""
+        updater = RatesUpdater()
+        return updater.run_update(source_filter=source)
+
+    def show_rates(
+        self,
+        currency: str | None = None,
+        top: int | None = None,
+        base: str | None = None,
+    ) -> str:
+        """Выводит список курсов из локального кеша с поддержкой фильтрации и сортировки."""
+        rates_data = self._db.load_rates_data()
+        pairs = get_pairs_dict(rates_data)
+        if not pairs:
+            raise ValueError(
+                "Локальный кеш курсов пуст. Выполните 'update-rates', чтобы загрузить данные."
+            )
+
+        last_refresh = str(rates_data.get("last_refresh", "unknown"))
+        base_code = validate_base_or_default(base)
+
+        items: list[tuple[str, float, str, str]] = []
+        for pair_key, info in pairs.items():
+            if not isinstance(info, dict) or "rate" not in info:
+                continue
+            src_code = pair_key.split("_")[0].upper()
+            rate_usd = float(info["rate"])
+            updated_at = str(info.get("updated_at", last_refresh))
+            source_name = str(info.get("source", "Cache"))
+
+            if base_code != "USD":
+                base_rate, _, _ = resolve_pair_rate(src_code, base_code, rates_data)
+                final_rate = base_rate
+                display_pair = f"{src_code}_{base_code}"
+            else:
+                final_rate = rate_usd
+                display_pair = pair_key
+
+            items.append((display_pair, final_rate, updated_at, source_name))
+
+        if currency:
+            target = currency.strip().upper()
+            items = [it for it in items if it[0].startswith(f"{target}_")]
+            if not items:
+                raise ValueError(f"Курс для '{target}' не найден в кеше.")
+
+        if top is not None:
+            if top <= 0:
+                raise ValueError("Параметр '--top' должен быть положительным целым числом")
+            crypto_items: list[tuple[str, float, str, str]] = []
+            for it in items:
+                ticker = it[0].split("_")[0]
+                try:
+                    curr_obj = get_currency(ticker)
+                    if isinstance(curr_obj, CryptoCurrency):
+                        crypto_items.append(it)
+                except CurrencyNotFoundError:
+                    continue
+            crypto_items.sort(key=lambda x: x[1], reverse=True)
+            items = crypto_items[:top]
+        else:
+            items.sort(key=lambda x: x[0])
+
+        header = f"Rates from cache (updated at {last_refresh}):"
+        bullet_lines = [header]
+        table = PrettyTable()
+        table.field_names = ["Pair", "Rate", "Updated At", "Source"]
+        table.align["Pair"] = "l"
+        table.align["Rate"] = "r"
+
+        for pair_name, rate_val, upd, src_name in items:
+            fmt_rate = f"{rate_val:.5f}".rstrip("0").rstrip(".") if rate_val < 1 else f"{rate_val:.2f}"
+            bullet_lines.append(f"- {pair_name}: {fmt_rate}")
+            table.add_row([pair_name, fmt_rate, upd, src_name])
+
+        return "\n".join(bullet_lines) + "\n\n" + table.get_string()
+
+
+def validate_base_or_default(base: str | None) -> str:
+    """Валидирует базовую валюту для show-rates или возвращает USD."""
+    if not base:
+        return "USD"
+    curr = get_currency(base)
+    return curr.code
