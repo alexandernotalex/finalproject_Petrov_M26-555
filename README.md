@@ -140,7 +140,7 @@ Rates from cache (updated at 2026-10-25T15:30:00Z):
 > get-rate --from USD --to BTC
 Курс USD→BTC: 0.00001685 (обновлено: 2026-10-25 15:30:00)
 Обратный курс BTC→USD: 59337.21
-
+```
 
 ## Демонстрация работы системы (CLI Session Log)
 
