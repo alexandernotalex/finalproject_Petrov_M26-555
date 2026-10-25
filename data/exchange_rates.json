@@ -1,1 +1,89 @@
-[]
+[
+  {
+    "id": "BTC_USD_2026-10-25T21:00:42Z",
+    "from_currency": "BTC",
+    "to_currency": "USD",
+    "rate": 80387.0,
+    "timestamp": "2026-10-25T21:00:42Z",
+    "source": "CoinGecko",
+    "meta": {
+      "raw_id": "bitcoin",
+      "request_ms": 307,
+      "status_code": 200,
+      "etag": "W/\"2a4bbd5a5f1904b951ec8295f2b7e953\""
+    }
+  },
+  {
+    "id": "ETH_USD_2026-10-25T21:00:42Z",
+    "from_currency": "ETH",
+    "to_currency": "USD",
+    "rate": 2344.02,
+    "timestamp": "2026-10-25T21:00:42Z",
+    "source": "CoinGecko",
+    "meta": {
+      "raw_id": "ethereum",
+      "request_ms": 307,
+      "status_code": 200,
+      "etag": "W/\"2a4bbd5a5f1904b951ec8295f2b7e953\""
+    }
+  },
+  {
+    "id": "SOL_USD_2026-10-25T21:00:42Z",
+    "from_currency": "SOL",
+    "to_currency": "USD",
+    "rate": 101.53,
+    "timestamp": "2026-10-25T21:00:42Z",
+    "source": "CoinGecko",
+    "meta": {
+      "raw_id": "solana",
+      "request_ms": 307,
+      "status_code": 200,
+      "etag": "W/\"2a4bbd5a5f1904b951ec8295f2b7e953\""
+    }
+  },
+  {
+    "id": "EUR_USD_2026-10-25T21:00:42Z",
+    "from_currency": "EUR",
+    "to_currency": "USD",
+    "rate": 1.12032265,
+    "timestamp": "2026-10-25T21:00:42Z",
+    "source": "ExchangeRate-API",
+    "meta": {
+      "raw_id": "EUR",
+      "raw_rate_per_usd": 0.8926,
+      "request_ms": 198,
+      "status_code": 200,
+      "etag": ""
+    }
+  },
+  {
+    "id": "GBP_USD_2026-10-25T21:00:42Z",
+    "from_currency": "GBP",
+    "to_currency": "USD",
+    "rate": 1.3374348,
+    "timestamp": "2026-10-25T21:00:42Z",
+    "source": "ExchangeRate-API",
+    "meta": {
+      "raw_id": "GBP",
+      "raw_rate_per_usd": 0.7477,
+      "request_ms": 198,
+      "status_code": 200,
+      "etag": ""
+    }
+  },
+  {
+    "id": "RUB_USD_2026-10-25T21:00:42Z",
+    "from_currency": "RUB",
+    "to_currency": "USD",
+    "rate": 0.01232433,
+    "timestamp": "2026-10-25T21:00:42Z",
+    "source": "ExchangeRate-API",
+    "meta": {
+      "raw_id": "RUB",
+      "raw_rate_per_usd": 81.1403,
+      "request_ms": 198,
+      "status_code": 200,
+      "etag": ""
+    }
+  }
+]
