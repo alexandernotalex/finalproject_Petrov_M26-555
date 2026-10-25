@@ -1,63 +1,31 @@
-"""Вспомогательные функции для работы с JSON-файлами, валидации и расчёта курсов."""
+"""Вспомогательные функции для валидации валют, расчёта курсов и работы с кешем."""
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DATA_DIR = BASE_DIR / "data"
+from valutatrade_hub.core.currencies import Currency, get_currency
+from valutatrade_hub.core.exceptions import ApiRequestError
+from valutatrade_hub.infra.database import DatabaseManager
+from valutatrade_hub.infra.settings import SettingsLoader
 
-USERS_FILE = DATA_DIR / "users.json"
-PORTFOLIOS_FILE = DATA_DIR / "portfolios.json"
-RATES_FILE = DATA_DIR / "rates.json"
-
-CACHE_TTL_SECONDS = 300  # 5 минут
-
-# Заглушка курсов на случай отсутствия или устаревания кеша
+# Заглушка курсов на случай инициализации пустого кеша
 DEFAULT_RATES_TO_USD: dict[str, float] = {
     "USD": 1.0,
     "EUR": 1.0786,
+    "GBP": 1.2950,
     "BTC": 59337.21,
     "RUB": 0.01016,
     "ETH": 3720.00,
+    "SOL": 175.50,
 }
 
 
-def load_json(filepath: Path, default: Any) -> Any:
-    """Читает JSON-файл или возвращает значение по умолчанию."""
-    if not filepath.exists():
-        return default
-    try:
-        content = filepath.read_text(encoding="utf-8").strip()
-        if not content:
-            return default
-        return json.loads(content)
-    except (json.JSONDecodeError, OSError):
-        return default
-
-
-def save_json(filepath: Path, data: Any) -> None:
-    """Атомарно записывает данные в JSON-файл через временный файл."""
-    filepath.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = filepath.with_suffix(filepath.suffix + ".tmp")
-    tmp_path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    tmp_path.replace(filepath)
-
-
 def validate_currency_code(currency_code: str) -> str:
-    """Проверяет и нормализует код валюты (верхний регистр, не пустой)."""
-    if not isinstance(currency_code, str) or not currency_code.strip():
-        raise ValueError("Код валюты не может быть пустым")
-    code = currency_code.strip().upper()
-    if not code.isalpha() or not (2 <= len(code) <= 5):
-        raise ValueError(f"Некорректный код валюты '{currency_code}'")
-    return code
+    """Проверяет код валюты через реестр currencies.py и возвращает его в верхнем регистре."""
+    currency: Currency = get_currency(currency_code)
+    return currency.code
 
 
 def validate_amount(amount: float | int | str) -> float:
@@ -71,19 +39,22 @@ def validate_amount(amount: float | int | str) -> float:
     return value
 
 
-def is_rate_fresh(updated_at_str: str, ttl_seconds: int = CACHE_TTL_SECONDS) -> bool:
-    """Проверяет, не устарел ли курс относительно заданного TTL."""
+def is_rate_fresh(updated_at_str: str, ttl_seconds: int | None = None) -> bool:
+    """Проверяет, не устарел ли курс относительно TTL из SettingsLoader."""
+    settings = SettingsLoader()
+    ttl = ttl_seconds if ttl_seconds is not None else int(settings.get("RATES_TTL_SECONDS", 300))
     try:
         updated_at = datetime.fromisoformat(updated_at_str)
         now = datetime.now(updated_at.tzinfo)
-        return (now - updated_at) <= timedelta(seconds=ttl_seconds)
+        return (now - updated_at) <= timedelta(seconds=ttl)
     except ValueError:
         return False
 
 
 def get_or_refresh_rates() -> dict[str, Any]:
-    """Возвращает кеш курсов из rates.json; при отсутствии создаёт из заглушки."""
-    rates_data = load_json(RATES_FILE, {})
+    """Читает кеш курсов через DatabaseManager; при отсутствии создаёт из заглушки."""
+    db = DatabaseManager()
+    rates_data = db.load_rates_data()
     if not rates_data:
         now_iso = datetime.now().replace(microsecond=0).isoformat()
         rates_data = {
@@ -93,12 +64,12 @@ def get_or_refresh_rates() -> dict[str, Any]:
         }
         rates_data["source"] = "StubService"
         rates_data["last_refresh"] = now_iso
-        save_json(RATES_FILE, rates_data)
+        db.save_rates_data(rates_data)
     return rates_data
 
 
 def extract_flat_rates(rates_data: dict[str, Any]) -> dict[str, float]:
-    """Извлекает словарь вида {'BTC_USD': 59337.21} из структуры rates.json."""
+    """Извлекает плоский словарь курсов {'BTC_USD': 59337.21} из структуры rates.json."""
     flat_rates: dict[str, float] = {"USD_USD": 1.0}
     for key, val in rates_data.items():
         if isinstance(val, dict) and "rate" in val:
@@ -111,7 +82,7 @@ def resolve_pair_rate(
     to_code: str,
     rates_data: dict[str, Any],
 ) -> tuple[float, str, bool]:
-    """Вычисляет курс from_code -> to_code, время обновления и флаг свежести."""
+    """Вычисляет курс from_code -> to_code, время обновления и флаг свежести TTL."""
     src = validate_currency_code(from_code)
     dst = validate_currency_code(to_code)
     now_iso = datetime.now().replace(microsecond=0).isoformat()
@@ -152,12 +123,9 @@ def resolve_pair_rate(
             updated_at = str(rates_data[src_usd_key].get("updated_at", now_iso))
             return rate, updated_at, is_rate_fresh(updated_at)
 
-    # Запасной расчёт через заглушку DEFAULT_RATES_TO_USD
+    # Резервное получение из DEFAULT_RATES_TO_USD
     if src in DEFAULT_RATES_TO_USD and dst in DEFAULT_RATES_TO_USD:
         rate = DEFAULT_RATES_TO_USD[src] / DEFAULT_RATES_TO_USD[dst]
-        rates_data[direct_key] = {"rate": rate, "updated_at": now_iso}
-        rates_data["last_refresh"] = now_iso
-        save_json(RATES_FILE, rates_data)
-        return rate, now_iso, True
+        return rate, now_iso, False
 
-    raise ValueError(f"Не удалось получить курс для {src}→{dst}")
+    raise ApiRequestError(f"Не удалось получить курс для {src}→{dst}")
