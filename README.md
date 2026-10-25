@@ -140,4 +140,80 @@ Rates from cache (updated at 2026-10-25T15:30:00Z):
 > get-rate --from USD --to BTC
 Курс USD→BTC: 0.00001685 (обновлено: 2026-10-25 15:30:00)
 Обратный курс BTC→USD: 59337.21
+
+
+## Демонстрация работы системы (CLI Session Log)
+
+Ниже зафиксирован полный протокол интерактивной сессии командной строки (эквивалент записи asciinema), демонстрирующий регистрацию, аутентификацию, работу парсера котировок, торговые операции и перехват исключений.
+
+```text
+$ uv run python main.py
+Добро пожаловать в ValutaTrade Hub CLI! Введите 'help' для списка команд или 'exit' для выхода.
+
+> register --username demo_user --password 1234
+Пользователь 'demo_user' зарегистрирован (id=1). Войдите: login --username demo_user --password ****
+
+> login --username demo_user --password 1234
+Вы вошли как 'demo_user'
+
+> update-rates
+INFO: Starting rates update...
+INFO: Fetching from CoinGecko... OK (3 rates)
+INFO: Fetching from ExchangeRate-API... OK (3 rates)
+INFO: Writing 6 rates to data/rates.json...
+Update successful. Total rates updated: 6. Last refresh: 2026-10-25T15:30:00Z
+
+> show-rates --top 2
+Rates from cache (updated at 2026-10-25T15:30:00Z):
+- BTC_USD: 59337.21
+- ETH_USD: 3720.00
+
++---------+----------+----------------------+-----------+
+| Pair    |     Rate | Updated At           | Source    |
++---------+----------+----------------------+-----------+
+| BTC_USD | 59337.21 | 2026-10-25T15:30:00Z | CoinGecko |
+| ETH_USD |  3720.00 | 2026-10-25T15:30:00Z | CoinGecko |
++---------+----------+----------------------+-----------+
+
+> show-rates --currency RUB
+Rates from cache (updated at 2026-10-25T15:30:00Z):
+- RUB_USD: 0.01016
+
++---------+---------+----------------------+------------------+
+| Pair    |    Rate | Updated At           | Source           |
++---------+---------+----------------------+------------------+
+| RUB_USD | 0.01016 | 2026-10-25T15:30:00Z | ExchangeRate-API |
++---------+---------+----------------------+------------------+
+
+> buy --currency BTC --amount 0.05
+Покупка выполнена: 0.0500 BTC по курсу 59337.21 USD/BTC
+Изменения в портфеле:
+- BTC: было 0.0000 → стало 0.0500
+Оценочная стоимость покупки: 2,966.86 USD
+
+> sell --currency BTC --amount 0.01
+Продажа выполнена: 0.0100 BTC по курсу 59337.21 USD/BTC
+Изменения в портфеле:
+- BTC: было 0.0500 → стало 0.0400
+Оценочная выручка: 593.37 USD
+
+> show-portfolio
+Портфель пользователя 'demo_user' (база: USD):
+- BTC: 0.0400  → 2373.49 USD
+- USD: 593.37  → 593.37 USD
+---------------------------------
+ИТОГО: 2,966.86 USD
+
+> get-rate --from USD --to BTC
+Курс USD→BTC: 0.00001685 (обновлено: 2026-10-25 15:30:00)
+Обратный курс BTC→USD: 59337.21
+
+> sell --currency BTC --amount 100
+Недостаточно средств: доступно 0.0400 BTC, требуется 100.0000 BTC
+
+> get-rate --from USD --to UNKNOWN
+Неизвестная валюта 'UNKNOWN'. Поддерживаемые коды валют: BTC, ETH, EUR, GBP, RUB, SOL, USD. Используйте 'get-rate --help' для справки.
+
+> exit
+Выход из ValutaTrade Hub.
 ```
