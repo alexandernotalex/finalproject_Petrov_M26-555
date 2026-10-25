@@ -331,7 +331,9 @@ class TradingUseCases:
         table.align["Rate"] = "r"
 
         for pair_name, rate_val, upd, src_name in items:
-            fmt_rate = f"{rate_val:.5f}".rstrip("0").rstrip(".") if rate_val < 1 else f"{rate_val:.2f}"
+            fmt_rate = (
+                f"{rate_val:.5f}".rstrip("0").rstrip(".") if rate_val < 1 else f"{rate_val:.2f}"
+            )
             bullet_lines.append(f"- {pair_name}: {fmt_rate}")
             table.add_row([pair_name, fmt_rate, upd, src_name])
 

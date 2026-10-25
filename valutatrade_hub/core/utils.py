@@ -55,11 +55,7 @@ def get_pairs_dict(rates_data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Извлекает словарь валютных пар как из формата {'pairs': {...}}, так и из плоского."""
     if "pairs" in rates_data and isinstance(rates_data["pairs"], dict):
         return rates_data["pairs"]
-    return {
-        k: v
-        for k, v in rates_data.items()
-        if isinstance(v, dict) and "rate" in v
-    }
+    return {k: v for k, v in rates_data.items() if isinstance(v, dict) and "rate" in v}
 
 
 def get_or_refresh_rates() -> dict[str, Any]:

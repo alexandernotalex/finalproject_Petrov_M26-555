@@ -134,7 +134,9 @@ class ExchangeRateApiClient(BaseApiClient):
                 f"ExchangeRate-API: неверный или неактивный API-ключ (HTTP {response.status_code})"
             )
         if response.status_code == 429:
-            raise ApiRequestError("ExchangeRate-API: превышен лимит запросов (429 Too Many Requests)")
+            raise ApiRequestError(
+                "ExchangeRate-API: превышен лимит запросов (429 Too Many Requests)"
+            )
         if response.status_code != 200:
             raise ApiRequestError(
                 f"ExchangeRate-API вернул статус {response.status_code}: {response.text[:120]}"

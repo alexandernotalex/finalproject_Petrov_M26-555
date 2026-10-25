@@ -17,7 +17,7 @@ class Currency(ABC):
         clean_code = code.strip().upper()
         if " " in clean_code or not (2 <= len(clean_code) <= 5) or not clean_code.isalnum():
             raise ValueError(
-                f"Некорректный код валюты '{code}':" \
+                f"Некорректный код валюты '{code}':"
                 "требуется 2-5 символов в верхнем регистре без пробелов"
             )
 
@@ -55,8 +55,11 @@ class CryptoCurrency(Currency):
         super().__init__(code=code, name=name)
         if not isinstance(algorithm, str) or not algorithm.strip():
             raise ValueError("Алгоритм не может быть пустым")
-        if isinstance(market_cap, bool) or not \
-            isinstance(market_cap,(int, float)) or market_cap < 0:
+        if (
+            isinstance(market_cap, bool)
+            or not isinstance(market_cap, (int, float))
+            or market_cap < 0
+        ):
             raise ValueError("Капитализация должна быть неотрицательным числом")
         self.algorithm: str = algorithm.strip()
         self.market_cap: float = float(market_cap)
@@ -77,8 +80,9 @@ CURRENCY_REGISTRY: dict[str, Currency] = {
     "RUB": FiatCurrency(code="RUB", name="Russian Ruble", issuing_country="Russian Federation"),
     "BTC": CryptoCurrency(code="BTC", name="Bitcoin", algorithm="SHA-256", market_cap=1.12e12),
     "ETH": CryptoCurrency(code="ETH", name="Ethereum", algorithm="Ethash", market_cap=4.50e11),
-    "SOL": CryptoCurrency(code="SOL", name="Solana",
-                          algorithm="Proof of History", market_cap=8.50e10),
+    "SOL": CryptoCurrency(
+        code="SOL", name="Solana", algorithm="Proof of History", market_cap=8.50e10
+    ),
 }
 
 
